@@ -1,70 +1,52 @@
-# Getting Started with Create React App
+# Is The G Train Running?
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A simple website that shows whether the NYC G train is currently running, inspired by [isthelrunning.com](https://isthelrunning.com/).
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- Real-time G train status from MTA API
+- Clean, minimal design
+- Automatic status updates every 5 minutes
+- Responsive design for all devices
 
-### `npm start`
+## Setup
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### 1. Install Dependencies
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```bash
+npm install
+```
 
-### `npm test`
+### 2. Run the App
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+npm start
+```
 
-### `npm run build`
+The app will open at `http://localhost:3000`
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## How It Works
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+The app fetches real-time G train data from the MTA's GTFS (General Transit Feed Specification) API endpoint:
+`https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g`
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+The GTFS parser analyzes the data to determine if the G train is currently running and displays:
+- **YES** (green) - G train is running
+- **NO** (red) - G train is not running
+- **LOADING** - Checking status
 
-### `npm run eject`
+## API Endpoint
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+The app uses the MTA's GTFS feed for the G train, which provides:
+- Real-time trip updates
+- Vehicle positions
+- Service alerts
+- Schedule information
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+**Note**: MTA feeds are now free and don't require API keys or authentication.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Technologies Used
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- React 18
+- MTA GTFS API
+- Modern CSS with responsive design
