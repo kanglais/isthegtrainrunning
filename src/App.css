@@ -66,6 +66,36 @@
   font-weight: 500;
 }
 
+.status-message {
+  font-size: 1.1rem;
+  margin: 0 0 3rem 0;
+  color: #dc3545;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #dc3545;
+}
+
+.status-message p {
+  margin: 0 0 0.75rem 0;
+  font-style: italic;
+}
+
+.mta-link {
+  color: #0066cc;
+  text-decoration: none;
+  font-weight: 500;
+  font-style: normal;
+  font-size: 1rem;
+  display: inline-block;
+  transition: color 0.2s ease;
+}
+
+.mta-link:hover {
+  color: #004499;
+  text-decoration: underline;
+}
+
 .bookmark-section {
   margin-bottom: 3rem;
 }
