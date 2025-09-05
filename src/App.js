@@ -91,7 +91,7 @@ function App() {
           <div className="status-message">
             <p>{statusMessage}</p>
             <a href="https://mta.info" target="_blank" rel="noopener noreferrer" className="mta-link">
-              Check MTA.info for more details →
+              Check MTA.info for details →
             </a>
           </div>
         )}
