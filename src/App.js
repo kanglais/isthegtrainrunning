@@ -7,6 +7,24 @@ function App() {
   const [nextTrainMinutes, setNextTrainMinutes] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - timestamp) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return `As of ${diffInSeconds} second${diffInSeconds !== 1 ? 's' : ''} ago`;
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `As of ${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `As of ${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    }
+  };
 
   useEffect(() => {
     const checkGtrainStatus = async () => {
@@ -40,6 +58,7 @@ function App() {
           setStatus(result.status);
           setNextTrainMinutes(result.nextTrainMinutes);
           setStatusMessage(result.statusMessage);
+          setLastUpdated(new Date());
         } else {
           console.log('API Response failed:', response.status, response.statusText);
           setStatus('NO');
@@ -64,6 +83,18 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Update time display every second
+  useEffect(() => {
+    if (!lastUpdated) return;
+    
+    const interval = setInterval(() => {
+      // Force re-render to update time display
+      setLastUpdated(new Date(lastUpdated.getTime()));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [lastUpdated]);
+
   return (
     <div className="App">
       <div className="content">
@@ -83,9 +114,9 @@ function App() {
           <p className="main-message">Bad luck, buddy.</p>
         )}
         
-        {status === 'YES' && nextTrainMinutes && (
+        {status === 'YES' && lastUpdated && (
           <p className="sub-message">
-            Yay! Next train in {nextTrainMinutes} minutes
+            Yay! {getTimeAgo(lastUpdated)}
           </p>
         )}
         
