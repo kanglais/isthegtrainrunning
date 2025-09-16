@@ -13,38 +13,39 @@ function App() {
       try {
         console.log('Starting G train status check...');
         
-        // For now, let's use a simple mock response to test if the app loads
-        // We'll add the real API call back once we confirm the app is working
-        const mockResponse = {
-          status: 'YES',
-          nextTrainMinutes: 5,
-          statusMessage: null
-        };
-        
-        console.log('Mock response:', mockResponse);
-        setStatus(mockResponse.status);
-        setNextTrainMinutes(mockResponse.nextTrainMinutes);
-        setStatusMessage(mockResponse.statusMessage);
-        
-        // TODO: Uncomment this when ready to use real MTA API
-        /*
+        // MTA feeds are now free and don't require API keys
         const response = await fetch('https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g');
         
         if (response.ok) {
+          // Get the response as an ArrayBuffer since it's binary protobuf data
           const arrayBuffer = await response.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
+          
+          console.log('=== MTA API RESPONSE DEBUG ===');
+          console.log('API Response status:', response.status);
+          console.log('API Response headers:', Object.fromEntries(response.headers.entries()));
+          console.log('Binary data length:', uint8Array.length);
+          console.log('First 50 bytes:', Array.from(uint8Array.slice(0, 50)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+          
+          // Convert binary data to text for basic pattern matching
           const textData = new TextDecoder('utf-8', { ignoreBOM: true, fatal: false }).decode(uint8Array);
+          console.log('Decoded text length:', textData.length);
+          console.log('Decoded text sample:', textData.substring(0, 500));
+          console.log('=== END MTA API RESPONSE ===');
+          
+          // Use the GTFS parser to determine if G train is running
           const result = parseGTFSStatus(textData, uint8Array);
+          console.log('Parser result:', result);
           
           setStatus(result.status);
           setNextTrainMinutes(result.nextTrainMinutes);
           setStatusMessage(result.statusMessage);
         } else {
+          console.log('API Response failed:', response.status, response.statusText);
           setStatus('NO');
           setNextTrainMinutes(null);
           setStatusMessage('Unable to connect to MTA services');
         }
-        */
       } catch (error) {
         console.error('Error fetching G train status:', error);
         setStatus('NO');
@@ -56,6 +57,11 @@ function App() {
     };
 
     checkGtrainStatus();
+    
+    // Check status every 5 minutes
+    const interval = setInterval(checkGtrainStatus, 5 * 60 * 1000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   return (
