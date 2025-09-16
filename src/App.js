@@ -68,7 +68,7 @@ function App() {
     <div className="App">
       <div className="content">
         <div className="logo-section">
-          <img src="%PUBLIC_URL%/g-train-logo.svg" alt="NYC Subway G Train Logo" className="g-train-logo" />
+          <img src="./g-train-logo.svg" alt="NYC Subway G Train Logo" className="g-train-logo" />
         </div>
         
         <div className="status-section">
