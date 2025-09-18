@@ -114,10 +114,23 @@ function App() {
           <p className="main-message">Bad luck, buddy.</p>
         )}
         
+        {status === 'KIND OF' && (
+          <p className="main-message">Kind of!</p>
+        )}
+        
         {status === 'YES' && lastUpdated && (
           <p className="sub-message">
             Yay! {getTimeAgo(lastUpdated)}
           </p>
+        )}
+        
+        {status === 'KIND OF' && statusMessage && (
+          <div className="status-message">
+            <p>{statusMessage}</p>
+            <a href="https://mta.info" target="_blank" rel="noopener noreferrer" className="mta-link">
+              Check MTA.info for details →
+            </a>
+          </div>
         )}
         
         {status === 'NO' && statusMessage && (

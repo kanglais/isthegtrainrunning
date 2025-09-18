@@ -52,6 +52,10 @@
   color: #dc3545;
 }
 
+.status-kind\ of {
+  color: #ffc107;
+}
+
 .main-message {
   font-size: 2.5rem;
   font-weight: bold;

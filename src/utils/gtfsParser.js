@@ -5,49 +5,75 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
     console.log('Text Data length:', gtfsData.length);
     console.log('Binary Data length:', binaryData ? binaryData.length : 'N/A');
     
-    // Simple approach: If we successfully got data from the MTA API, 
-    // and it's a reasonable size, assume the G train is running
-    // This is more reliable than trying to parse complex protobuf data
-    
+    // Check if we have valid data from the MTA API
     const hasValidData = binaryData ? binaryData.length > 100 : gtfsData.length > 100;
-    const isValidResponse = hasValidData;
     
-    // Get current time for realistic next train estimates
+    if (!hasValidData) {
+      console.log('G train status: NO DATA');
+      return {
+        status: 'NO',
+        nextTrainMinutes: null,
+        statusMessage: 'Unable to get current G train status'
+      };
+    }
+    
+    // Get current time for operating hours check
     const now = new Date();
     const currentHour = now.getHours();
-    
-    // Check if it's during normal operating hours (roughly 5 AM to 1 AM)
     const isOperatingHours = currentHour >= 5 || currentHour <= 1;
     
-    console.log('Analysis:', {
-      hasValidData,
-      dataSize: binaryData ? binaryData.length : gtfsData.length,
+    // Check for full G train route: Court Square to Church Avenue
+    // Look for Court Square services (CSQ, Court, or other indicators)
+    const hasCourtSquareService = checkForCourtSquareService(gtfsData);
+    
+    // Look for Church Avenue services (CHU)
+    const hasChurchAveService = checkForChurchAveService(gtfsData);
+    
+    // Look for Bedford-Nostrand services (BDN) 
+    const hasBedfordNostrandService = checkForBedfordNostrandService(gtfsData);
+    
+    console.log('Route Analysis:', {
+      hasCourtSquareService,
+      hasChurchAveService,
+      hasBedfordNostrandService,
       currentHour,
-      isOperatingHours
+      isOperatingHours,
+      dataSize: binaryData ? binaryData.length : gtfsData.length
     });
     
-    // If we got valid data and it's operating hours, assume G train is running
-    if (isValidResponse && isOperatingHours) {
+    // G train is only fully running if it serves the complete route:
+    // Court Square -> Bedford-Nostrand -> Church Avenue
+    const isFullyRunning = hasCourtSquareService && hasChurchAveService && hasBedfordNostrandService;
+    
+    if (isFullyRunning && isOperatingHours) {
       const nextTrainMinutes = generateRealisticWaitTime();
-      console.log('G train status: RUNNING (based on valid API response)');
+      console.log('G train status: YES (full route running)');
       return {
         status: 'YES',
         nextTrainMinutes: nextTrainMinutes,
         statusMessage: null
       };
-    } else if (isValidResponse && !isOperatingHours) {
-      console.log('G train status: LIMITED SERVICE (off-peak hours)');
+    } else if (hasChurchAveService && hasBedfordNostrandService && !hasCourtSquareService) {
+      console.log('G train status: KIND OF (truncated route - missing Court Square)');
+      const servingStations = getServingStations(gtfsData, hasCourtSquareService, hasBedfordNostrandService, hasChurchAveService);
+      return {
+        status: 'KIND OF',
+        nextTrainMinutes: null,
+        statusMessage: `The MTA says the G train is running from ${servingStations}`
+      };
+    } else if (!isOperatingHours) {
+      console.log('G train status: NO (off-peak hours)');
       return {
         status: 'NO',
         nextTrainMinutes: null,
         statusMessage: 'The MTA says the G train has limited late-night service'
       };
     } else {
-      console.log('G train status: NO DATA');
+      console.log('G train status: NO (not running)');
       return {
         status: 'NO',
         nextTrainMinutes: null,
-        statusMessage: 'Unable to get current G train status'
+        statusMessage: 'The MTA says the G train is not running'
       };
     }
   } catch (error) {
@@ -57,6 +83,65 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
       nextTrainMinutes: null,
       statusMessage: 'Service status unavailable'
     };
+  }
+};
+
+// Helper functions to check for specific stations in the GTFS data
+const checkForCourtSquareService = (data) => {
+  // Look for Court Square indicators in the data
+  const courtSquarePatterns = [
+    /CSQ/i,           // Court Square station code
+    /court/i,          // Court Square text
+    /court.?square/i,  // Court Square with optional punctuation
+    /1G.*CSQ/i,        // G train with Court Square
+    /G.*court/i        // G train with court
+  ];
+  
+  return courtSquarePatterns.some(pattern => pattern.test(data));
+};
+
+const checkForChurchAveService = (data) => {
+  // Look for Church Avenue indicators
+  const churchAvePatterns = [
+    /CHU/i,            // Church Avenue station code
+    /church/i,         // Church Avenue text
+    /1G.*CHU/i,        // G train with Church Avenue
+    /G.*church/i       // G train with church
+  ];
+  
+  return churchAvePatterns.some(pattern => pattern.test(data));
+};
+
+const checkForBedfordNostrandService = (data) => {
+  // Look for Bedford-Nostrand indicators
+  const bedfordNostrandPatterns = [
+    /BDN/i,            // Bedford-Nostrand station code
+    /bedford/i,        // Bedford text
+    /nostrand/i,       // Nostrand text
+    /1G.*BDN/i,        // G train with Bedford-Nostrand
+    /G.*bedford/i,     // G train with bedford
+    /G.*nostrand/i     // G train with nostrand
+  ];
+  
+  return bedfordNostrandPatterns.some(pattern => pattern.test(data));
+};
+
+const getServingStations = (data, hasCourtSquare, hasBedfordNostrand, hasChurchAve) => {
+  const stations = [];
+  
+  if (hasCourtSquare) stations.push('Court Square');
+  if (hasBedfordNostrand) stations.push('Bedford-Nostrand');
+  if (hasChurchAve) stations.push('Church Avenue');
+  
+  if (stations.length === 0) {
+    return 'limited stations';
+  } else if (stations.length === 1) {
+    return stations[0];
+  } else if (stations.length === 2) {
+    return `${stations[0]} to ${stations[1]}`;
+  } else {
+    // All three stations
+    return `${stations[0]} to ${stations[2]}`;
   }
 };
 
