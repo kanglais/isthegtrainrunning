@@ -23,29 +23,26 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
     const isOperatingHours = currentHour >= 5 || currentHour <= 1;
     
     // Check for full G train route: Court Square to Church Avenue
-    // Look for Court Square services (CSQ, Court, or other indicators)
+    // Based on current API data, CRS appears to be Court Square
     const hasCourtSquareService = checkForCourtSquareService(gtfsData);
     
     // Look for Church Avenue services (CHU)
     const hasChurchAveService = checkForChurchAveService(gtfsData);
     
-    // Look for Bedford-Nostrand services (BDN) 
-    const hasBedfordNostrandService = checkForBedfordNostrandService(gtfsData);
+    // Look for the full route pattern (CHU/CRS or CRS/CHU indicates full route)
+    const hasFullRouteService = checkForFullRouteService(gtfsData);
     
     console.log('Route Analysis:', {
       hasCourtSquareService,
       hasChurchAveService,
-      hasBedfordNostrandService,
+      hasFullRouteService,
       currentHour,
       isOperatingHours,
       dataSize: binaryData ? binaryData.length : gtfsData.length
     });
     
-    // G train is only fully running if it serves the complete route:
-    // Court Square -> Bedford-Nostrand -> Church Avenue
-    const isFullyRunning = hasCourtSquareService && hasChurchAveService && hasBedfordNostrandService;
-    
-    if (isFullyRunning && isOperatingHours) {
+    // G train is fully running if we see the full route pattern (CHU/CRS or CRS/CHU)
+    if (hasFullRouteService && isOperatingHours) {
       const nextTrainMinutes = generateRealisticWaitTime();
       console.log('G train status: YES (full route running)');
       return {
@@ -53,9 +50,9 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
         nextTrainMinutes: nextTrainMinutes,
         statusMessage: null
       };
-    } else if (hasChurchAveService && hasBedfordNostrandService && !hasCourtSquareService) {
-      console.log('G train status: KIND OF (truncated route - missing Court Square)');
-      const servingStations = getServingStations(gtfsData, hasCourtSquareService, hasBedfordNostrandService, hasChurchAveService);
+    } else if (hasChurchAveService && hasCourtSquareService && !hasFullRouteService) {
+      console.log('G train status: KIND OF (partial route)');
+      const servingStations = getServingStations(gtfsData, hasCourtSquareService, true, hasChurchAveService);
       return {
         status: 'KIND OF',
         nextTrainMinutes: null,
@@ -91,13 +88,27 @@ const checkForCourtSquareService = (data) => {
   // Look for Court Square indicators in the data
   const courtSquarePatterns = [
     /CSQ/i,           // Court Square station code
+    /CRS/i,           // Court Square station code (alternative)
     /court/i,          // Court Square text
     /court.?square/i,  // Court Square with optional punctuation
     /1G.*CSQ/i,        // G train with Court Square
+    /1G.*CRS/i,        // G train with Court Square (alternative)
     /G.*court/i        // G train with court
   ];
   
   return courtSquarePatterns.some(pattern => pattern.test(data));
+};
+
+const checkForFullRouteService = (data) => {
+  // Look for full route patterns (Court Square to Church Avenue)
+  const fullRoutePatterns = [
+    /CHU\/CRS/i,      // Church Avenue to Court Square
+    /CRS\/CHU/i,      // Court Square to Church Avenue
+    /1G.*CHU\/CRS/i,  // G train Church to Court
+    /1G.*CRS\/CHU/i   // G train Court to Church
+  ];
+  
+  return fullRoutePatterns.some(pattern => pattern.test(data));
 };
 
 const checkForChurchAveService = (data) => {
@@ -113,14 +124,18 @@ const checkForChurchAveService = (data) => {
 };
 
 const checkForBedfordNostrandService = (data) => {
-  // Look for Bedford-Nostrand indicators
+  // Look for Bedford-Nostrand indicators (also check for CRS which might be Court Square)
   const bedfordNostrandPatterns = [
     /BDN/i,            // Bedford-Nostrand station code
+    /CRS/i,            // Court Square station code (might be used instead)
     /bedford/i,        // Bedford text
     /nostrand/i,       // Nostrand text
+    /court/i,          // Court text (for Court Square)
     /1G.*BDN/i,        // G train with Bedford-Nostrand
+    /1G.*CRS/i,        // G train with Court Square
     /G.*bedford/i,     // G train with bedford
-    /G.*nostrand/i     // G train with nostrand
+    /G.*nostrand/i,    // G train with nostrand
+    /G.*court/i        // G train with court
   ];
   
   return bedfordNostrandPatterns.some(pattern => pattern.test(data));
