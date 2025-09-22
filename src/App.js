@@ -6,6 +6,7 @@ function App() {
   const [status, setStatus] = useState('LOADING');
   const [nextTrainMinutes, setNextTrainMinutes] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [serviceDetails, setServiceDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
@@ -58,6 +59,7 @@ function App() {
           setStatus(result.status);
           setNextTrainMinutes(result.nextTrainMinutes);
           setStatusMessage(result.statusMessage);
+          setServiceDetails(result.serviceDetails);
           setLastUpdated(new Date());
         } else {
           console.log('API Response failed:', response.status, response.statusText);
@@ -127,6 +129,13 @@ function App() {
         {status === 'KIND OF' && statusMessage && (
           <div className="status-message">
             <p>{statusMessage}</p>
+            {serviceDetails && serviceDetails.length > 0 && (
+              <div className="service-details">
+                {serviceDetails.map((detail, index) => (
+                  <p key={index} className="service-detail-item">{detail}</p>
+                ))}
+              </div>
+            )}
             <a href="https://mta.info" target="_blank" rel="noopener noreferrer" className="mta-link">
               Check MTA.info for details →
             </a>

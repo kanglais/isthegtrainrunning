@@ -85,6 +85,32 @@
   font-style: italic;
 }
 
+.service-details {
+  margin: 1rem 0;
+  text-align: left;
+  background-color: #ffffff;
+  border-radius: 6px;
+  padding: 0.75rem;
+  border: 1px solid #e9ecef;
+}
+
+.service-detail-item {
+  margin: 0.5rem 0;
+  font-style: normal;
+  font-size: 0.95rem;
+  color: #495057;
+  padding-left: 1rem;
+  position: relative;
+}
+
+.service-detail-item:before {
+  content: "•";
+  color: #ffc107;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
+}
+
 .mta-link {
   color: #0066cc;
   text-decoration: none;

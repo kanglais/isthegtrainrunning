@@ -52,11 +52,12 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
       };
     } else if (hasChurchAveService && hasCourtSquareService && !hasFullRouteService) {
       console.log('G train status: KIND OF (partial route)');
-      const servingStations = getServingStations(gtfsData, hasCourtSquareService, true, hasChurchAveService);
+      const detailedServiceInfo = extractDetailedServiceInfo(gtfsData);
       return {
         status: 'KIND OF',
         nextTrainMinutes: null,
-        statusMessage: `The MTA says the G train is running from ${servingStations}`
+        statusMessage: detailedServiceInfo.message,
+        serviceDetails: detailedServiceInfo.details
       };
     } else if (!isOperatingHours) {
       console.log('G train status: NO (off-peak hours)');
@@ -226,6 +227,165 @@ const extractNextTrainTime = (data) => {
     console.error('Error extracting next train time:', error);
     return generateRealisticWaitTime();
   }
+};
+
+const extractDetailedServiceInfo = (data) => {
+  try {
+    const dataLower = data.toLowerCase();
+    
+    // Check for specific G train stations and their service status
+    const stationInfo = extractStationServiceInfo(data);
+    
+    // Check for bus substitutions
+    const busInfo = extractBusSubstitutionInfo(data);
+    
+    // Check for service alerts and changes
+    const alertInfo = extractServiceAlertInfo(data);
+    
+    // Combine all information into a comprehensive message
+    let message = 'The MTA says the G train is running with service changes';
+    let details = [];
+    
+    if (stationInfo.stations.length > 0) {
+      details.push(`G train serves: ${stationInfo.stations.join(', ')}`);
+    }
+    
+    if (busInfo.hasBusSubstitution) {
+      details.push(`Bus service: ${busInfo.busMessage}`);
+    }
+    
+    if (alertInfo.hasAlerts) {
+      details.push(`Service note: ${alertInfo.alertMessage}`);
+    }
+    
+    if (details.length === 0) {
+      details.push('Limited service - check MTA.info for details');
+    }
+    
+    return {
+      message: message,
+      details: details
+    };
+  } catch (error) {
+    console.error('Error extracting detailed service info:', error);
+    return {
+      message: 'The MTA says the G train is running with service changes',
+      details: ['Service details unavailable - check MTA.info']
+    };
+  }
+};
+
+const extractStationServiceInfo = (data) => {
+  const stations = [];
+  const dataLower = data.toLowerCase();
+  
+  // G train station patterns with their common names
+  const stationPatterns = [
+    { pattern: /metropolitan|lorimer/i, name: 'Metropolitan/Lorimer' },
+    { pattern: /bedford.*nostrand|nostrand.*bedford/i, name: 'Bedford-Nostrand' },
+    { pattern: /court.*square|csq|crs/i, name: 'Court Square' },
+    { pattern: /church.*ave|chu/i, name: 'Church Avenue' },
+    { pattern: /greenpoint/i, name: 'Greenpoint' },
+    { pattern: /nassau.*ave/i, name: 'Nassau Avenue' },
+    { pattern: /broadway/i, name: 'Broadway' },
+    { pattern: /flushing.*ave/i, name: 'Flushing Avenue' },
+    { pattern: /myrtle.*ave/i, name: 'Myrtle Avenue' },
+    { pattern: /classon.*ave/i, name: 'Classon Avenue' },
+    { pattern: /clinton.*wash/i, name: 'Clinton-Washington' },
+    { pattern: /franklin.*ave/i, name: 'Franklin Avenue' },
+    { pattern: /hoyt.*shermer/i, name: 'Hoyt-Schermerhorn' },
+    { pattern: /bergen.*st/i, name: 'Bergen Street' },
+    { pattern: /carroll.*st/i, name: 'Carroll Street' },
+    { pattern: /smith.*9th/i, name: 'Smith-9th Streets' },
+    { pattern: /4th.*ave/i, name: '4th Avenue' },
+    { pattern: /7th.*ave/i, name: '7th Avenue' },
+    { pattern: /15th.*st/i, name: '15th Street' },
+    { pattern: /prospect.*park/i, name: 'Prospect Park' },
+    { pattern: /fort.*hamilton/i, name: 'Fort Hamilton Parkway' },
+    { pattern: /church.*ave|chu/i, name: 'Church Avenue' }
+  ];
+  
+  stationPatterns.forEach(({ pattern, name }) => {
+    if (pattern.test(data) && !stations.includes(name)) {
+      stations.push(name);
+    }
+  });
+  
+  return { stations };
+};
+
+const extractBusSubstitutionInfo = (data) => {
+  const dataLower = data.toLowerCase();
+  
+  // Look for bus substitution patterns
+  const busPatterns = [
+    /bus.*substitut/i,
+    /shuttle.*bus/i,
+    /bus.*service/i,
+    /free.*bus/i,
+    /bus.*bridge/i,
+    /bus.*replacement/i,
+    /bus.*connection/i,
+    /bus.*to.*court.*square/i,
+    /bus.*to.*church.*ave/i,
+    /bus.*from.*metropolitan/i,
+    /bus.*from.*lorimer/i
+  ];
+  
+  const hasBusSubstitution = busPatterns.some(pattern => pattern.test(dataLower));
+  
+  let busMessage = '';
+  if (hasBusSubstitution) {
+    if (dataLower.includes('court square') || dataLower.includes('crs') || dataLower.includes('csq')) {
+      busMessage = 'Free bus service to Court Square';
+    } else if (dataLower.includes('church') || dataLower.includes('chu')) {
+      busMessage = 'Free bus service to Church Avenue';
+    } else if (dataLower.includes('metropolitan') || dataLower.includes('lorimer')) {
+      busMessage = 'Free bus service from Metropolitan/Lorimer';
+    } else {
+      busMessage = 'Free bus service available';
+    }
+  }
+  
+  return {
+    hasBusSubstitution,
+    busMessage
+  };
+};
+
+const extractServiceAlertInfo = (data) => {
+  const dataLower = data.toLowerCase();
+  
+  // Enhanced service alert patterns
+  const alertPatterns = [
+    { pattern: /service.*change/i, message: 'Service changes in effect' },
+    { pattern: /planned.*work/i, message: 'Planned maintenance work' },
+    { pattern: /signal.*problem/i, message: 'Signal problems causing delays' },
+    { pattern: /mechanical.*problem/i, message: 'Mechanical problems affecting service' },
+    { pattern: /police.*investigation/i, message: 'Police investigation causing delays' },
+    { pattern: /medical.*emergency/i, message: 'Medical emergency affecting service' },
+    { pattern: /delays/i, message: 'Delays in service' },
+    { pattern: /suspended/i, message: 'Service suspended' },
+    { pattern: /not.*running/i, message: 'Service not running normally' },
+    { pattern: /reduced.*service/i, message: 'Reduced service in effect' },
+    { pattern: /skip.*stop/i, message: 'Some stops may be skipped' },
+    { pattern: /express.*service/i, message: 'Express service in effect' },
+    { pattern: /local.*service/i, message: 'Local service only' }
+  ];
+  
+  for (const { pattern, message } of alertPatterns) {
+    if (pattern.test(dataLower)) {
+      return {
+        hasAlerts: true,
+        alertMessage: message
+      };
+    }
+  }
+  
+  return {
+    hasAlerts: false,
+    alertMessage: ''
+  };
 };
 
 const extractServiceAlert = (data) => {
