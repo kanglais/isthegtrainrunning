@@ -17,11 +17,6 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
       };
     }
     
-    // Get current time for operating hours check
-    const now = new Date();
-    const currentHour = now.getHours();
-    const isOperatingHours = currentHour >= 5 || currentHour <= 1;
-    
     // Check for full G train route: Court Square to Church Avenue
     // Based on current API data, CRS appears to be Court Square
     const hasCourtSquareService = checkForCourtSquareService(gtfsData);
@@ -36,13 +31,11 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
       hasCourtSquareService,
       hasChurchAveService,
       hasFullRouteService,
-      currentHour,
-      isOperatingHours,
       dataSize: binaryData ? binaryData.length : gtfsData.length
     });
     
     // G train is fully running if we see the full route pattern (CHU/CRS or CRS/CHU)
-    if (hasFullRouteService && isOperatingHours) {
+    if (hasFullRouteService) {
       const nextTrainMinutes = generateRealisticWaitTime();
       console.log('G train status: YES (full route running)');
       return {
@@ -50,7 +43,7 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
         nextTrainMinutes: nextTrainMinutes,
         statusMessage: null
       };
-    } else if (hasChurchAveService && hasCourtSquareService && !hasFullRouteService) {
+    } else if ((hasChurchAveService || hasCourtSquareService) && !hasFullRouteService) {
       console.log('G train status: KIND OF (partial route)');
       const detailedServiceInfo = extractDetailedServiceInfo(gtfsData);
       return {
@@ -58,13 +51,6 @@ export const parseGTFSStatus = (gtfsData, binaryData = null) => {
         nextTrainMinutes: null,
         statusMessage: detailedServiceInfo.message,
         serviceDetails: detailedServiceInfo.details
-      };
-    } else if (!isOperatingHours) {
-      console.log('G train status: NO (off-peak hours)');
-      return {
-        status: 'NO',
-        nextTrainMinutes: null,
-        statusMessage: 'The MTA says the G train has limited late-night service'
       };
     } else {
       console.log('G train status: NO (not running)');
