@@ -8,11 +8,9 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "server": "node server/index.js",
-    "dev": "concurrently \"npm run server\" \"npm run start\""
+    "dev": "react-scripts start"
   },
   "dependencies": {
-    "concurrently": "^8.2.2",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-scripts": "5.0.1"
@@ -28,5 +26,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2"
   }
 }

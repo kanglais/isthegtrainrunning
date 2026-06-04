@@ -1,415 +1,128 @@
-// GTFS Parser utility for MTA G train data
-export const parseGTFSStatus = (gtfsData, binaryData = null) => {
-  try {
-    console.log('=== PARSER DEBUG ===');
-    console.log('Text Data length:', gtfsData.length);
-    console.log('Binary Data length:', binaryData ? binaryData.length : 'N/A');
-    
-    // Check if we have valid data from the MTA API
-    const hasValidData = binaryData ? binaryData.length > 100 : gtfsData.length > 100;
-    
-    if (!hasValidData) {
-      console.log('G train status: NO DATA');
-      return {
-        status: 'NO',
-        nextTrainMinutes: null,
-        statusMessage: 'Unable to get current G train status'
-      };
-    }
-    
-    // Check for full G train route: Court Square to Church Avenue
-    // Based on current API data, CRS appears to be Court Square
-    const hasCourtSquareService = checkForCourtSquareService(gtfsData);
-    
-    // Look for Church Avenue services (CHU)
-    const hasChurchAveService = checkForChurchAveService(gtfsData);
-    
-    // Look for the full route pattern (CHU/CRS or CRS/CHU indicates full route)
-    const hasFullRouteService = checkForFullRouteService(gtfsData);
-    
-    console.log('Route Analysis:', {
-      hasCourtSquareService,
-      hasChurchAveService,
-      hasFullRouteService,
-      dataSize: binaryData ? binaryData.length : gtfsData.length
-    });
-    
-    // G train is fully running if we see the full route pattern (CHU/CRS or CRS/CHU)
-    if (hasFullRouteService) {
-      const nextTrainMinutes = generateRealisticWaitTime();
-      console.log('G train status: YES (full route running)');
-      return {
-        status: 'YES',
-        nextTrainMinutes: nextTrainMinutes,
-        statusMessage: null
-      };
-    } else if ((hasChurchAveService || hasCourtSquareService) && !hasFullRouteService) {
-      console.log('G train status: KIND OF (partial route)');
-      const detailedServiceInfo = extractDetailedServiceInfo(gtfsData);
-      return {
-        status: 'KIND OF',
-        nextTrainMinutes: null,
-        statusMessage: detailedServiceInfo.message,
-        serviceDetails: detailedServiceInfo.details
-      };
+// G train stops in order north → south
+// Stop IDs appear as literal strings in GTFS-RT binary protobuf data
+const G_STOPS = [
+  { id: 'G22', name: 'Court Square-23 St' },
+  { id: 'G24', name: '21 St' },
+  { id: 'G26', name: 'Greenpoint Av' },
+  { id: 'G28', name: 'Nassau Av' },
+  { id: 'G29', name: 'Metropolitan Av' },
+  { id: 'G30', name: 'Broadway' },
+  { id: 'G31', name: 'Flushing Av' },
+  { id: 'G32', name: 'Myrtle-Willoughby Aves' },
+  { id: 'G33', name: 'Bedford-Nostrand Aves' },
+  { id: 'G34', name: 'Classon Av' },
+  { id: 'G35', name: 'Clinton-Washington Aves' },
+  { id: 'G36', name: 'Fulton St' },
+  { id: 'A42', name: 'Hoyt-Schermerhorn Sts' },
+  { id: 'F20', name: 'Bergen St' },
+  { id: 'F21', name: 'Carroll St' },
+  { id: 'F22', name: 'Smith-9th Sts' },
+  { id: 'F23', name: '4 Av-9 St' },
+  { id: 'F24', name: '7 Av' },
+  { id: 'F25', name: '15 St-Prospect Park' },
+  { id: 'F26', name: 'Fort Hamilton Pkwy' },
+  { id: 'F27', name: 'Church Av' },
+];
+
+const NORTH_TERMINAL = /G22[NS]/;
+const SOUTH_TERMINAL = /F27[NS]/;
+const ANY_G_STOP = /G2[2-9][NS]|G3[0-6][NS]|A42[NS]|F2[0-7][NS]/;
+
+// Option A: determine which stations are being served based on stop IDs in the feed
+const getServiceRange = (data) => {
+  const served = G_STOPS.filter(stop => new RegExp(stop.id + '[NS]').test(data));
+  if (served.length === 0) return null;
+  if (served.length === 1) return served[0].name;
+  return `${served[0].name} → ${served[served.length - 1].name}`;
+};
+
+// Option B: extract readable G train alert text from the alerts binary feed
+// Strings are stored as literal UTF-8 bytes in protobuf — we scan for printable sequences
+export const extractGTrainAlerts = (alertsData) => {
+  if (!alertsData) return null;
+
+  // Pull out all readable ASCII strings >= 25 chars
+  const strings = [];
+  let current = '';
+  for (let i = 0; i < alertsData.length; i++) {
+    const byte = alertsData[i];
+    if (byte >= 0x20 && byte <= 0x7E) {
+      current += String.fromCharCode(byte);
     } else {
-      console.log('G train status: NO (not running)');
-      return {
-        status: 'NO',
-        nextTrainMinutes: null,
-        statusMessage: 'The MTA says the G train is not running'
-      };
+      if (current.length >= 25) strings.push(current.trim());
+      current = '';
     }
+  }
+  if (current.length >= 25) strings.push(current.trim());
+
+  // Filter for strings that mention the G train AND describe a service condition
+  const relevant = strings.filter(s => {
+    const lower = s.toLowerCase();
+    const mentionsG = /\bg\s+train/i.test(s) || /\bg-train/i.test(s) || /\bg line\b/i.test(s);
+    const isServiceInfo = lower.includes('delay') || lower.includes('suspend') ||
+      lower.includes('reroute') || lower.includes('divert') || lower.includes('skip') ||
+      lower.includes('service change') || lower.includes('not running') ||
+      lower.includes('running') || lower.includes('shuttle') || lower.includes('alternate');
+    return mentionsG && isServiceInfo;
+  });
+
+  return relevant.length > 0 ? relevant[0] : null;
+};
+
+export const parseGTFSStatus = (gtfsData, binaryData = null, alertText = null) => {
+  try {
+    const hasValidData = binaryData ? binaryData.length > 100 : gtfsData.length > 100;
+    if (!hasValidData) {
+      return { status: 'NO', statusMessage: 'No data from MTA', serviceDetails: [] };
+    }
+
+    const hasAnyService = ANY_G_STOP.test(gtfsData);
+    if (!hasAnyService) {
+      return { status: 'NO', statusMessage: 'No G train service detected', serviceDetails: [] };
+    }
+
+    const hasNorthEnd = NORTH_TERMINAL.test(gtfsData);
+    const hasSouthEnd = SOUTH_TERMINAL.test(gtfsData);
+
+    if (hasNorthEnd && hasSouthEnd) {
+      return { status: 'YES', statusMessage: null, serviceDetails: [] };
+    }
+
+    // Partial service — build details from stop range + alert text
+    const serviceDetails = buildPartialServiceDetails(gtfsData, alertText);
+    return {
+      status: 'KIND OF',
+      statusMessage: 'The G train is running with service changes',
+      serviceDetails,
+    };
   } catch (error) {
     console.error('Error parsing GTFS data:', error);
-    return {
-      status: 'NO',
-      nextTrainMinutes: null,
-      statusMessage: 'Service status unavailable'
-    };
+    return { status: 'NO', statusMessage: 'Service status unavailable', serviceDetails: [] };
   }
 };
 
-// Helper functions to check for specific stations in the GTFS data
-const checkForCourtSquareService = (data) => {
-  // Look for Court Square indicators in the data
-  const courtSquarePatterns = [
-    /CSQ/i,           // Court Square station code
-    /CRS/i,           // Court Square station code (alternative)
-    /court/i,          // Court Square text
-    /court.?square/i,  // Court Square with optional punctuation
-    /1G.*CSQ/i,        // G train with Court Square
-    /1G.*CRS/i,        // G train with Court Square (alternative)
-    /G.*court/i        // G train with court
-  ];
-  
-  return courtSquarePatterns.some(pattern => pattern.test(data));
-};
+const buildPartialServiceDetails = (data, alertText) => {
+  const details = [];
 
-const checkForFullRouteService = (data) => {
-  // Look for full route patterns (Court Square to Church Avenue)
-  const fullRoutePatterns = [
-    /CHU\/CRS/i,      // Church Avenue to Court Square
-    /CRS\/CHU/i,      // Court Square to Church Avenue
-    /1G.*CHU\/CRS/i,  // G train Church to Court
-    /1G.*CRS\/CHU/i   // G train Court to Church
-  ];
-  
-  return fullRoutePatterns.some(pattern => pattern.test(data));
-};
+  // Option A: show which stations are being served
+  const range = getServiceRange(data);
+  if (range) {
+    details.push(`Service running: ${range}`);
+  }
 
-const checkForChurchAveService = (data) => {
-  // Look for Church Avenue indicators
-  const churchAvePatterns = [
-    /CHU/i,            // Church Avenue station code
-    /church/i,         // Church Avenue text
-    /1G.*CHU/i,        // G train with Church Avenue
-    /G.*church/i       // G train with church
-  ];
-  
-  return churchAvePatterns.some(pattern => pattern.test(data));
-};
-
-const checkForBedfordNostrandService = (data) => {
-  // Look for Bedford-Nostrand indicators (also check for CRS which might be Court Square)
-  const bedfordNostrandPatterns = [
-    /BDN/i,            // Bedford-Nostrand station code
-    /CRS/i,            // Court Square station code (might be used instead)
-    /bedford/i,        // Bedford text
-    /nostrand/i,       // Nostrand text
-    /court/i,          // Court text (for Court Square)
-    /1G.*BDN/i,        // G train with Bedford-Nostrand
-    /1G.*CRS/i,        // G train with Court Square
-    /G.*bedford/i,     // G train with bedford
-    /G.*nostrand/i,    // G train with nostrand
-    /G.*court/i        // G train with court
-  ];
-  
-  return bedfordNostrandPatterns.some(pattern => pattern.test(data));
-};
-
-const getServingStations = (data, hasCourtSquare, hasBedfordNostrand, hasChurchAve) => {
-  const stations = [];
-  
-  if (hasCourtSquare) stations.push('Court Square');
-  if (hasBedfordNostrand) stations.push('Bedford-Nostrand');
-  if (hasChurchAve) stations.push('Church Avenue');
-  
-  if (stations.length === 0) {
-    return 'limited stations';
-  } else if (stations.length === 1) {
-    return stations[0];
-  } else if (stations.length === 2) {
-    return `${stations[0]} to ${stations[1]}`;
+  // Option B: show alert reason from the alerts feed
+  if (alertText) {
+    details.push(alertText);
   } else {
-    // All three stations
-    return `${stations[0]} to ${stations[2]}`;
+    // Fall back to keyword detection in the main feed
+    if (/shuttle/i.test(data)) details.push('Shuttle bus service in effect for some stations');
+    if (/suspend/i.test(data)) details.push('Some service suspended');
+    if (/delay/i.test(data)) details.push('Delays in service');
   }
-};
 
-const extractTimestamp = (data) => {
-  // Try to extract timestamp from GTFS data
-  // This is a simplified approach - you might need to enhance this based on actual data format
-  try {
-    // Look for common timestamp patterns in the data
-    const timestampMatch = data.match(/\d{10,}/);
-    if (timestampMatch) {
-      return parseInt(timestampMatch[0]);
-    }
-    return null;
-  } catch (error) {
-    return null;
+  if (details.length === 0) {
+    details.push('Limited service — check MTA.info for details');
   }
-};
 
-const generateRealisticWaitTime = () => {
-  // Generate realistic G train wait times based on time of day
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-  
-  let baseWaitTime;
-  
-  // Peak hours (7-9 AM, 5-7 PM): shorter waits
-  if ((currentHour >= 7 && currentHour <= 9) || (currentHour >= 17 && currentHour <= 19)) {
-    baseWaitTime = Math.floor(Math.random() * 6) + 2; // 2-7 minutes
-  }
-  // Daytime hours: moderate waits
-  else if (currentHour >= 6 && currentHour <= 22) {
-    baseWaitTime = Math.floor(Math.random() * 8) + 4; // 4-11 minutes
-  }
-  // Late night/early morning: longer waits
-  else {
-    baseWaitTime = Math.floor(Math.random() * 12) + 8; // 8-19 minutes
-  }
-  
-  return baseWaitTime;
-};
-
-const extractNextTrainTime = (data) => {
-  try {
-    // Look for arrival times in the GTFS data
-    // This is a simplified approach - in a real implementation you'd parse the actual GTFS structure
-    const currentTime = Math.floor(Date.now() / 1000);
-    const arrivalTimeMatches = data.match(/\d{10,}/g);
-    
-    if (arrivalTimeMatches) {
-      // Find the next arrival time that's in the future
-      const futureTimes = arrivalTimeMatches
-        .map(time => parseInt(time))
-        .filter(time => time > currentTime && time < currentTime + 3600) // Within next hour
-        .sort((a, b) => a - b);
-      
-      if (futureTimes.length > 0) {
-        const nextArrival = futureTimes[0];
-        const minutesUntilArrival = Math.ceil((nextArrival - currentTime) / 60);
-        return Math.max(1, Math.min(60, minutesUntilArrival)); // Between 1-60 minutes
-      }
-    }
-    
-    // Fallback: return a reasonable estimate if we can't parse specific times
-    return generateRealisticWaitTime();
-  } catch (error) {
-    console.error('Error extracting next train time:', error);
-    return generateRealisticWaitTime();
-  }
-};
-
-const extractDetailedServiceInfo = (data) => {
-  try {
-    const dataLower = data.toLowerCase();
-    
-    // Check for specific G train stations and their service status
-    const stationInfo = extractStationServiceInfo(data);
-    
-    // Check for bus substitutions
-    const busInfo = extractBusSubstitutionInfo(data);
-    
-    // Check for service alerts and changes
-    const alertInfo = extractServiceAlertInfo(data);
-    
-    // Combine all information into a comprehensive message
-    let message = 'The MTA says the G train is running with service changes';
-    let details = [];
-    
-    if (stationInfo.stations.length > 0) {
-      details.push(`G train serves: ${stationInfo.stations.join(', ')}`);
-    }
-    
-    if (busInfo.hasBusSubstitution) {
-      details.push(`Bus service: ${busInfo.busMessage}`);
-    }
-    
-    if (alertInfo.hasAlerts) {
-      details.push(`Service note: ${alertInfo.alertMessage}`);
-    }
-    
-    if (details.length === 0) {
-      details.push('Limited service - check MTA.info for details');
-    }
-    
-    return {
-      message: message,
-      details: details
-    };
-  } catch (error) {
-    console.error('Error extracting detailed service info:', error);
-    return {
-      message: 'The MTA says the G train is running with service changes',
-      details: ['Service details unavailable - check MTA.info']
-    };
-  }
-};
-
-const extractStationServiceInfo = (data) => {
-  const stations = [];
-  const dataLower = data.toLowerCase();
-  
-  // G train station patterns with their common names
-  const stationPatterns = [
-    { pattern: /metropolitan|lorimer/i, name: 'Metropolitan/Lorimer' },
-    { pattern: /bedford.*nostrand|nostrand.*bedford/i, name: 'Bedford-Nostrand' },
-    { pattern: /court.*square|csq|crs/i, name: 'Court Square' },
-    { pattern: /church.*ave|chu/i, name: 'Church Avenue' },
-    { pattern: /greenpoint/i, name: 'Greenpoint' },
-    { pattern: /nassau.*ave/i, name: 'Nassau Avenue' },
-    { pattern: /broadway/i, name: 'Broadway' },
-    { pattern: /flushing.*ave/i, name: 'Flushing Avenue' },
-    { pattern: /myrtle.*ave/i, name: 'Myrtle Avenue' },
-    { pattern: /classon.*ave/i, name: 'Classon Avenue' },
-    { pattern: /clinton.*wash/i, name: 'Clinton-Washington' },
-    { pattern: /franklin.*ave/i, name: 'Franklin Avenue' },
-    { pattern: /hoyt.*shermer/i, name: 'Hoyt-Schermerhorn' },
-    { pattern: /bergen.*st/i, name: 'Bergen Street' },
-    { pattern: /carroll.*st/i, name: 'Carroll Street' },
-    { pattern: /smith.*9th/i, name: 'Smith-9th Streets' },
-    { pattern: /4th.*ave/i, name: '4th Avenue' },
-    { pattern: /7th.*ave/i, name: '7th Avenue' },
-    { pattern: /15th.*st/i, name: '15th Street' },
-    { pattern: /prospect.*park/i, name: 'Prospect Park' },
-    { pattern: /fort.*hamilton/i, name: 'Fort Hamilton Parkway' },
-    { pattern: /church.*ave|chu/i, name: 'Church Avenue' }
-  ];
-  
-  stationPatterns.forEach(({ pattern, name }) => {
-    if (pattern.test(data) && !stations.includes(name)) {
-      stations.push(name);
-    }
-  });
-  
-  return { stations };
-};
-
-const extractBusSubstitutionInfo = (data) => {
-  const dataLower = data.toLowerCase();
-  
-  // Look for bus substitution patterns
-  const busPatterns = [
-    /bus.*substitut/i,
-    /shuttle.*bus/i,
-    /bus.*service/i,
-    /free.*bus/i,
-    /bus.*bridge/i,
-    /bus.*replacement/i,
-    /bus.*connection/i,
-    /bus.*to.*court.*square/i,
-    /bus.*to.*church.*ave/i,
-    /bus.*from.*metropolitan/i,
-    /bus.*from.*lorimer/i
-  ];
-  
-  const hasBusSubstitution = busPatterns.some(pattern => pattern.test(dataLower));
-  
-  let busMessage = '';
-  if (hasBusSubstitution) {
-    if (dataLower.includes('court square') || dataLower.includes('crs') || dataLower.includes('csq')) {
-      busMessage = 'Free bus service to Court Square';
-    } else if (dataLower.includes('church') || dataLower.includes('chu')) {
-      busMessage = 'Free bus service to Church Avenue';
-    } else if (dataLower.includes('metropolitan') || dataLower.includes('lorimer')) {
-      busMessage = 'Free bus service from Metropolitan/Lorimer';
-    } else {
-      busMessage = 'Free bus service available';
-    }
-  }
-  
-  return {
-    hasBusSubstitution,
-    busMessage
-  };
-};
-
-const extractServiceAlertInfo = (data) => {
-  const dataLower = data.toLowerCase();
-  
-  // Enhanced service alert patterns
-  const alertPatterns = [
-    { pattern: /service.*change/i, message: 'Service changes in effect' },
-    { pattern: /planned.*work/i, message: 'Planned maintenance work' },
-    { pattern: /signal.*problem/i, message: 'Signal problems causing delays' },
-    { pattern: /mechanical.*problem/i, message: 'Mechanical problems affecting service' },
-    { pattern: /police.*investigation/i, message: 'Police investigation causing delays' },
-    { pattern: /medical.*emergency/i, message: 'Medical emergency affecting service' },
-    { pattern: /delays/i, message: 'Delays in service' },
-    { pattern: /suspended/i, message: 'Service suspended' },
-    { pattern: /not.*running/i, message: 'Service not running normally' },
-    { pattern: /reduced.*service/i, message: 'Reduced service in effect' },
-    { pattern: /skip.*stop/i, message: 'Some stops may be skipped' },
-    { pattern: /express.*service/i, message: 'Express service in effect' },
-    { pattern: /local.*service/i, message: 'Local service only' }
-  ];
-  
-  for (const { pattern, message } of alertPatterns) {
-    if (pattern.test(dataLower)) {
-      return {
-        hasAlerts: true,
-        alertMessage: message
-      };
-    }
-  }
-  
-  return {
-    hasAlerts: false,
-    alertMessage: ''
-  };
-};
-
-const extractServiceAlert = (data) => {
-  try {
-    // Look for common service alert keywords in the GTFS data
-    const alertMessages = [
-      'service change',
-      'delays',
-      'suspended',
-      'not running',
-      'service disruption',
-      'planned work',
-      'signal problems',
-      'mechanical problems',
-      'police investigation',
-      'medical emergency'
-    ];
-    
-    // Check for alert indicators in the data
-    const dataLower = data.toLowerCase();
-    
-    // Look for specific service conditions
-    if (dataLower.includes('suspend') || dataLower.includes('not running')) {
-      return 'The MTA says the G train is suspended';
-    } else if (dataLower.includes('delay') || dataLower.includes('slower')) {
-      return 'The MTA says the G train is running with delays';
-    } else if (dataLower.includes('signal') || dataLower.includes('mechanical')) {
-      return 'The MTA says the G train has technical issues';
-    } else if (dataLower.includes('planned work') || dataLower.includes('maintenance')) {
-      return 'The MTA says the G train has planned maintenance';
-    } else if (dataLower.includes('police') || dataLower.includes('investigation')) {
-      return 'The MTA says the G train has service disruptions';
-    }
-    
-    // Default message when no specific alert is found
-    return 'The MTA says the G train is not running normally';
-  } catch (error) {
-    console.error('Error extracting service alert:', error);
-    return 'Service status unavailable';
-  }
+  return details;
 };
